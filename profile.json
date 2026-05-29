@@ -1,0 +1,27 @@
+{
+  "white_baseline_y": 263.0,
+  "black_baseline_y": 242.0,
+  "tier_boundary": 252.5,
+  "press_thresholds": {
+    "Left|B4": 60.0,
+    "Right|C4": 22.400000000000002,
+    "Left|G4": 60.0,
+    "Left|A4": 34.2,
+    "Right|E4": 15.0,
+    "Right|F4": 60.0,
+    "Left|F4": 60.0,
+    "Right|D4": 60.0,
+    "Left|C5": 14.6,
+    "Left|G#4": 60.0,
+    "Left|A#4": 60.0,
+    "Right|C#4": 60.0,
+    "Right|D#4": 60.0,
+    "Left|F#4": 60.0
+  },
+  "black_resting_y": {
+    "Left|A#4": 214.5,
+    "Left|F#4": 244.0
+  },
+  "frame_height": 720,
+  "trained_at": "2026-05-29T14:04:31"
+}
