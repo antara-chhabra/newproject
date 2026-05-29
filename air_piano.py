@@ -9,11 +9,29 @@ Controls:
 
 import cv2
 import mediapipe as mp
+from mediapipe.tasks import python as mp_tasks
+from mediapipe.tasks.python import vision as mp_vision
 import numpy as np
+import os
 import time
 import threading
+import urllib.request
 from collections import deque
 from typing import Optional
+
+# ── Hand-landmarker model (Tasks API, required for mediapipe ≥ 0.10.21) ──────
+_MODEL_PATH = os.path.join(os.path.dirname(__file__), "hand_landmarker.task")
+_MODEL_URL  = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+)
+
+def _ensure_model() -> str:
+    if not os.path.exists(_MODEL_PATH):
+        print("[Air Piano] Downloading hand-landmarker model (~2 MB)…")
+        urllib.request.urlretrieve(_MODEL_URL, _MODEL_PATH)
+        print("[Air Piano] Model ready.")
+    return _MODEL_PATH
 
 try:
     import sounddevice as sd
@@ -200,13 +218,15 @@ class AirPiano:
     PLAYING     = 1
 
     def __init__(self):
-        mp_hands = mp.solutions.hands
-        self.hands = mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=2,
-            min_detection_confidence=0.72,
+        opts = mp_vision.HandLandmarkerOptions(
+            base_options=mp_tasks.BaseOptions(model_asset_path=_ensure_model()),
+            running_mode=mp_vision.RunningMode.VIDEO,
+            num_hands=2,
+            min_hand_detection_confidence=0.72,
+            min_hand_presence_confidence=0.60,
             min_tracking_confidence=0.60,
         )
+        self.landmarker = mp_vision.HandLandmarker.create_from_options(opts)
         self.audio = AudioEngine()
 
         self.phase      = self.CALIBRATING
@@ -246,18 +266,18 @@ class AirPiano:
             layout  = PianoLayout(0, piano_y, CAM_W, piano_h)
 
             # Hand detection on camera region only
-            rgb = cv2.cvtColor(frame[:, :CAM_W], cv2.COLOR_BGR2RGB)
-            res = self.hands.process(rgb)
+            rgb    = cv2.cvtColor(frame[:, :CAM_W], cv2.COLOR_BGR2RGB)
+            mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            res    = self.landmarker.detect_for_video(mp_img, int(time.time() * 1000))
 
             # Collect fingertips: (px, py, finger_name, color_idx, hand_idx)
             tips: list[tuple[int, int, str, int, int]] = []
-            if res.multi_hand_landmarks:
-                for hidx, hand_lm in enumerate(res.multi_hand_landmarks):
-                    for i, tid in enumerate(TIPS):
-                        lm = hand_lm.landmark[tid]
-                        px = int(lm.x * CAM_W)
-                        py = int(lm.y * h)
-                        tips.append((px, py, TIP_NAMES[i], i, hidx))
+            for hidx, hand_lm in enumerate(res.hand_landmarks):
+                for i, tid in enumerate(TIPS):
+                    lm = hand_lm[tid]
+                    px = int(lm.x * CAM_W)
+                    py = int(lm.y * h)
+                    tips.append((px, py, TIP_NAMES[i], i, hidx))
 
             # ── Calibration phase ─────────────────────────────────────────
             if self.phase == self.CALIBRATING:
@@ -344,6 +364,7 @@ class AirPiano:
                 self.finger_down.clear()
                 print("[Air Piano] Recalibrating…")
 
+        self.landmarker.close()
         cap.release()
         cv2.destroyAllWindows()
 
