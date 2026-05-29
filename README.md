@@ -1,6 +1,6 @@
 # Air Piano
 
-Play a piano with your bare hands in the air — no keyboard required. Uses your webcam, MediaPipe hand tracking, and OpenCV. Supports two hands with personalized press calibration.
+Play a piano with your bare hands in the air — no keyboard required. Uses your webcam, MediaPipe hand tracking, and OpenCV. Tracks both hands independently with personalized press calibration per finger per key.
 
 ---
 
@@ -20,27 +20,24 @@ On first run, the app automatically downloads a ~2 MB hand-landmarker model. Aft
 
 ## How to Play
 
-The app runs through 4 phases:
+The app runs through 4 phases — **fully automatic, no keyboard needed at any point.**
 
-### Phase 1 — Setup (interactive)
-Move away from the screen until your **entire face AND both hands** are clearly visible in the frame. The app shows you a hand counter; press SPACE when ready.
+### Phase 1 — Setup
+Step back from the screen until your face and both hands are clearly visible in the frame. Once both hands are detected for 1.5 continuous seconds, the app moves on automatically.
 
 ### Phase 2 — Calibration (4 seconds)
-Hold both hands at the height you'd naturally hover above a piano — like you're about to play. The app records your resting finger height as your **baseline**. Stay still.
+Hold both hands at the height you'd naturally hover above a piano. The app samples the y-position of every detected fingertip for 4 seconds, then takes the 70th percentile as your **baseline** — the pixel row representing your resting hand height. Any finger that dips below that line triggers a note.
 
-### Phase 3 — Training (guided, ~40 seconds)
-The app will ask you to press each key one by one. Press each key multiple times while the app learns **how you press**. For each key and hand combination, the app measures your typical press depth and sets a personalized threshold.
+### Phase 3 — Training (~1 minute)
+The app presents all 13 keys in a **random order**. For each key:
+- The target key is highlighted in cyan on the piano
+- Press it naturally — the app records how deep your finger goes below the baseline
+- After **3 confirmed presses** (or 4 seconds), the app moves to the next key automatically
 
-On the screen:
-- The current key is highlighted in the piano at the bottom
-- Your fingers are shown with colour-coded dots
-- A vertical **depth bar** glows from baseline to fingertip
-- Use this bar to calibrate your feel for the depth
-
-Press SPACE to move to the next key.
+The app learns a separate press threshold for each (hand, key) combination — so your left thumb on C4 and your right index on C4 can have different sensitivities.
 
 ### Phase 4 — Playing
-Play freely! All 10 fingers work simultaneously. Your **left-right position** picks the key, your **downward motion** triggers it. The dashboard on the right shows active notes and a fading history.
+Play freely. All 10 fingers work simultaneously. Your **left-right position** selects the key, your **downward motion** triggers it. Stats are shown in a small overlay box in the top-right corner.
 
 ---
 
@@ -54,28 +51,33 @@ One octave: **C4 D4 E4 F4 G4 A4 B4 C5** (white keys) + **C#4 D#4 F#4 G#4 A#4** (
 
 | Key | Action |
 |-----|--------|
-| `SPACE` | Advance to next phase / next training key |
-| `R` | Reset to setup (re-run all phases) |
+| `R` | Restart from the beginning |
 | `Q` | Quit |
+
+No other keyboard input is needed. All phases advance automatically.
 
 ---
 
 ## How It Works
 
-**Two-hand mapping:** The app tracks both your left and right hand separately. Each hand learns its own pressing pattern for each key — so if you press C4 with your left thumb vs right index, the app adapts to each.
+**Baseline measurement:** During calibration the app collects the y-pixel of every fingertip every frame. The 70th percentile of all those samples becomes `baseline_y`. This is stored as a single number (pixel row) for the session.
 
-**Personalized thresholds:** During training, the app records how deep you press each key. It uses the 40th percentile of your press depths as your personalized threshold — so you don't have to press as hard if you naturally press gently, or can press harder if that's your style.
+**Two-hand tracking:** MediaPipe reports handedness ("Left" / "Right") for each detected hand. Every fingertip tip is tagged with its hand label so left and right are handled independently throughout calibration, training, and play.
 
-**Real-time visual feedback:** The depth bar shows you exactly how close you are to triggering a note. Watch the bar grow and brighten as you press deeper.
+**Personalized thresholds:** Training depth samples are stored per `(hand, key)` pair. After training, the 40th-percentile depth for each pair becomes that combination's trigger threshold — capturing a light but intentional press. Pairs with no training data fall back to 20 px. These thresholds are stored in memory for the session only.
+
+**Audio mixing:** Each note is pre-synthesized as a float32 numpy array with an ADSR envelope and harmonic overtones. A `sounddevice.OutputStream` runs a callback on a dedicated audio thread that mixes all currently playing voices into a single output buffer every 512 samples — this allows multiple simultaneous notes without interruption or crackling.
+
+**Visual feedback:** A vertical depth bar grows from the baseline to each fingertip as you press down, brightening in the finger's colour as you approach the trigger threshold. A ripple effect fires at the baseline on each confirmed note.
 
 ---
 
 ## Tips
 
-- **Good lighting** on your hands makes tracking much more reliable.
-- **Don't shy away during training** — press each key firmly and naturally. The more varied your presses, the better the personalization.
-- In playing mode, the thresholds are **fixed** to what you trained. Press `R` to recalibrate if your position changes drastically.
-- Use the **depth bar** to get a tactile sense of the press depth before committing to playing scales.
+- **Good lighting** on your hands improves tracking significantly.
+- Press **naturally and deliberately** during training — the personalization only works if your training presses reflect how you actually play.
+- The **depth bar** is your guide: when it fully brightens, you're at your threshold.
+- Press `R` to restart if you move closer or further from the camera.
 
 ---
 
@@ -85,6 +87,6 @@ One octave: **C4 D4 E4 F4 G4 A4 B4 C5** (white keys) + **C#4 D#4 F#4 G#4 A#4** (
 |---------|-----|
 | No sound | `pip install sounddevice` |
 | Webcam not opening | Change `cv2.VideoCapture(0)` to `cv2.VideoCapture(1)` in `air_piano.py` |
-| Hands not detected during setup | Improve lighting; make sure both hands are fully in frame |
-| Training keys feel too sensitive / not sensitive enough | Re-run training (`R`) and press more firmly or gently as needed |
-| One hand not being tracked | Face the camera squarely; keep both hands fully visible and in good light |
+| Setup never advances | Improve lighting; step back further so both hands and face fit in frame |
+| Notes fire too easily or not at all | Restart (`R`) and press more firmly or gently during training |
+| One hand not tracked | Face the camera squarely; keep both hands fully in frame and well-lit |
